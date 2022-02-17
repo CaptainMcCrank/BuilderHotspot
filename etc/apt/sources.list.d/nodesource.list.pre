@@ -1,0 +1,4 @@
+#deb [trusted=yes] https://deb.nodesource.com/node_11.x buster main
+deb [trusted=yes] http://10.6.6.1:3142/deb.nodesource.com/node_11.x buster main
+deb-src [trusted=yes] http://10.6.6.1:3142/deb.nodesource.com/node_11.x buster main
+#deb-src https://deb.nodesource.com/node_11.x buster main

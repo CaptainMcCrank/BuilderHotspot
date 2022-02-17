@@ -1,0 +1,801 @@
+---
+# BuilderHotspot.yml
+# This recipe generates the builder hotspot.  It can be used to apply ansible playbooks to hosts attached to it's wifi network
+# 
+# This recipe has the following primary features
+# 1) Hostapd preconfigured to produce a 802.11g wifi network with the ssid "Builderhotspot"
+# 2) Preconfigured iptables ip forwarding rules so you can attach it to a an existing network via wifi or ethernet for network connectivity
+# 3) Installation of Ansible & some preconfiguration for easy device management  
+# 4) Installation & configuration of apt-cacher-ng for proxied downloads
+# 5) Installation & configuration of afp, which gives mac users an AFP share to access directly from a dev workstation
+
+#
+# Prerequisites: 
+# * Raspberry Pi 3 B+ (x2) One runs a built version of the builder image downloadable at #URL#.  The second one will be used for receiving a build.)
+# * An internet connection (Wifi or ethernet work)
+# * Optional: If you want to use an existing wireless network for backhaul connectivity instead of the ethernet port on your Pi)
+# The Panda wireless PAU05 is easy to source and is the device I test with.  https://www.amazon.com/Panda-300Mbps-Wireless-USB-Adapter/dp/B00EQT0YK2
+# * Raspberry Pi Imager software: https://www.raspberrypi.com/software/ 
+# * (x2+) 8gb SD cards (one that recieves the Builder image, and a second that will get a vanilla raspbian build.
+#
+
+# Setup steps:
+# 1) Use Raspberry Pi imager to apply the "builder image" to your first SDCard.  The running builder image can be accessed via ssh at pi@builderhotspot.local on your home network.  The default password is ChangeDefaultPwd3331333
+# 2) Use Raspberry Pi imager to apply a 32 bit Rasbperry Pi "recipient image" to your second SDCard.
+# 3) Modify the image by launching advanced options (Ctrl+Shift+X).  The following changes configure the image to attach to the builder hotspot's wifi on powerup and prepare it for receiving recipes: 
+#      A) Set the hostname to AnsibleDest.local  
+#      B) Set the password to be ChangeDefaultPwd3331333 
+#      C) Enable "Configure Wifi" and set an SSID of BuilderHotspot and a password of 8 p's "pppppppp"
+#      D) Set the timezone & Locale as appropriate.  Please note that this recipe builds with the assumption that you want en_US.UTF-8 for your locale & language.  (If you want a different locale, you'll need to update the SetupRecipient.sh destination preparation script.
+#
+# 4) Install the builder image sdcard on the PI you'd like to use as your BuilderHotspot.  Attach an ethernet cable connected to your DHCP-enabled LAN to the ethernet port of your pi.  Power up!
+# 5) After the builder device has fully booted, Install the recipient image sdcard on the Pi you'd like to use as your recipient.  If you'd like it to use wifi as backhaul, install your Panda wireless wifi adapter on the USB and power up!
+# 6) ssh into the Builder hotspot (ssh pi@BuilderHotspot.local:ChangeDefaultPwd3331333) 
+#   a) CD into Playbooks/BuilderHotspot
+#   b) Confirm that the recipient image has attached to your wifi (arp -a | grep wlan0).  you should see a device called AnsibleDest attached.
+#   c) Prepare the recipient image for accepting ansible by running SetupRecipient.sh (./SetupRecipient.sh).  This script resets a few commonly used ssh keys for the local network, copies an ssh id to the recipient device and sets the Locale on the target to en_US.UTF-8 (as of October, 2021, the new Rasbian images still default to en_GB.UTF8, even if you set the locale to LosAngeles in the Raspbian imager. 
+#   d) After the recipient image reboots, you're ready to go!  Install the Builder Recipient image with the following command: 
+#     ansible-playbook -i /etc/ansible/hosts -u pi BuilderHotspot.yml
+# 
+- hosts: AnsibleHotspotTargets
+  become: yes
+  become_user: root
+  vars:
+    temp_folder: /tmp
+    root_playbook_dir: /home/pi/Playbooks/BuilderHotspot
+    py_version: 3.8.0
+    # ansible_python_interpreter: /usr/bin/python3
+    os_info_path: /etc/os-release
+    threads: 4
+    int_count: "{{ ansible_interfaces | count }}"
+    # ***BE SURE TO INCREMENT THE FOLLOWING VARIABLES IF YOU ARE UPGRADING THE HOTSPOT RECIPE
+    version:
+      build_date: 12_20_21
+      hotspot_ver: 1.0
+  tasks:
+
+   - name: get content of /etc/os-release so we can confirm we're looking at a bullseye-based target.
+     slurp:
+       src: "{{os_info_path}}"
+     register: remote_content_encoded
+
+   - name: decode remote content
+     set_fact:
+       remote_os_info: "{{remote_content_encoded.content | b64decode}}"
+
+   - debug:
+       msg: "content of remote file {{os_info_path}}: {{remote_os_info}}"
+
+   - name: deactivate wlan1 if its on
+     command: ip link set wlan1 down
+     when: int_count != '3'
+     tags: base
+
+   - name: wipe /var/cache/apt/* 
+     file:
+       path: /var/cache/apt/
+     tags: base
+  
+   - name: disable powersave mode on wlan0 (Reduces possibility of intermittent connectivity loss due to powersaving)
+     command: iwconfig wlan0 power off
+     tags: base
+
+   - name: Synchronization of files for apt client (configures target device to use builderhotspot's proxies.)
+     ansible.builtin.copy: 
+       src: "{{ root_playbook_dir }}/etc/apt"
+       dest: /tmp/
+
+#See https://forums.raspberrypi.com/viewtopic.php?t=298069 for context on the following commands: 
+
+   - name: Overwrite /etc/apt/sources.list to use builderhotspot's general apt-related proxies.
+     command: cp /tmp/apt/sources.list.pre /etc/apt/sources.list
+
+   - name: Overwrite /etc/apt/sources.list.d/raspi.list to use builderhotspot's raspbian-related proxies.
+     command: cp /tmp/apt/sources.list.d/raspi.list.pre /etc/apt/sources.list.d/raspi.list
+
+   - name: Run the equivilent of apt-get update (resynchronize the package index files from their sources on the target machine available since publication of Raspbian image)
+     apt:
+       update_cache: yes 
+
+   - name: Update all packages (install the newest versions of all packages currently installed on the system from the sources enumerated in /etc/apt/sources.list on the target system)
+     apt:
+       upgrade: dist
+     tags: base
+
+   - name: upgrade pip (PIP3 is required for modern ansible)
+     command: python -m pip install --upgrade pip
+     tags: hotspot
+
+   - name: Install ansible using pip 3.9
+     pip:
+       executable: pip3.9
+       name: ansible
+     tags: Ansible
+
+   - name: "install python{{py_version}} runtime&build dependencies.  (Ensures we have Python {{py_version}}, which is needed for long term ansible support)."
+     become: yes
+     apt:
+       name: ['build-essential', 'tk-dev', 'libncurses5-dev', 'libncursesw5-dev', 'libreadline6-dev','libdb5.3-dev', 'libgdbm-dev', 'libsqlite3-dev', 'libssl-dev', 'libbz2-dev', 'libexpat1-dev', 'liblzma-dev', 'zlib1g-dev', 'libffi-dev']
+
+   - name: "Download python{{py_version}}"
+     get_url:
+       url="https://www.python.org/ftp/python/{{py_version}}/Python-{{py_version}}.tar.xz"
+       dest="/tmp/Python-{{py_version}}.tar.xz"
+
+   - name: "Unarchive downloaded python"
+     unarchive:
+       src="/tmp/Python-{{py_version}}.tar.xz"
+       dest="/tmp/"
+       copy=no
+       creates="/tmp/Python-{{py_version}}"
+
+   - name: "configure python{{py_version}} build"
+     command: ./configure
+     args:
+       chdir: "/tmp/Python-{{py_version}}"
+       creates: "/tmp/Python-{{py_version}}/Makefile"
+
+   - name: "build python{{py_version}}"
+     # not using make module to be able to use -j and creates option to fully skip step
+     command: make -j{{threads}}
+     args:
+       chdir: "/tmp/Python-{{py_version}}"
+       creates: "/tmp/Python-{{py_version}}/python"
+
+   - name: "Finally, install they python build we pulled & compiled!"
+     become: yes
+     make:
+       chdir: "/tmp/Python-{{py_version}}"
+       target: altinstall
+
+   - name: Remove Wolfram-engine (Wolfram-engine provides computational intellignence that we're deleting to save space.)
+     apt:
+       name: wolfram-engine
+       state: absent
+       purge: yes
+       autoremove: yes
+     tags: cleanup
+
+   - name: Remove scratch (Scratch is a hobbyist IDE we're deleting to save space)
+     apt:
+       name: scratch
+       state: absent
+       purge: yes
+       autoremove: yes
+     tags: cleanup
+
+   - name: Remove minecraft-pi (Minecraft-pi is a game we're deleting to save space)
+     apt:
+       name: minecraft-pi
+       state: absent
+       purge: yes
+       autoremove: yes
+     tags: cleanup
+
+   - name: Create desktop background file (Makes the system distinguishable if you're on a KVM)
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/pi/TreeDesktop.jpg"
+       dest: /home/pi/Pictures/Desktop.JPG
+       owner: pi
+       group: pi
+       mode: 0644
+     tags: base
+
+   - name: set the new desktop background 
+     lineinfile:
+             # changed location in rasbpian buster.  Old location:
+             # path: /home/pi/.config/pcmanfm/LXDE-pi/desktop-items-0.conf
+       path: /etc/xdg/pcmanfm/LXDE-pi/desktop-items-0.conf
+       regexp: '(wallpaper=.+)'
+       line: 'wallpaper=/home/pi/Pictures/Desktop.JPG'
+     tags: new
+
+   - name: Create Playbooks target directory (This is where you can deploy your own playbooks)
+     file: 
+       path: /home/pi/Playbooks/ 
+       state: directory 
+       mode: 0755
+       owner: pi
+       group: pi
+     tags: ansible
+
+   - name: Create /etc/ansible directory (Ansible is the operations automation framework that is the key capability of this device)
+     file: path=/etc/ansible/ state=directory mode=0755
+     tags: ansible
+
+   - name: Synchronization of files for ANSIBLE (Preconfigures Ansible to publish to configured Raspbian recipient images.  Ansible.cfg modified to support Python 3.8 & pi as remote user.  hosts file preconfigured to support AnsibleDest.local targets)
+     tags: ansible
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/ansible/"
+       dest: /etc/ansible/
+
+   - name: Copy /usr/local/bin/ custom scripts over to target (I install customization scripts in /usr/local/bin.  They manage proper iptables rules & support log file resets in case you need to clear private data.)
+     #synchronize:
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/usr/local/bin"
+       dest: /usr/local/
+       mode: 0755
+     tags: custom_scripts
+
+   - name: Install bmon network monitor (Useful for observing interface-specific transfer stats)
+     apt:
+       pkg: bmon
+       state: present
+       update_cache: true
+     tags: hotspot
+
+   - name: Install iptraf-ng network monitor (Powerful tool for observing interface-specific details without full-blown wireshark)
+     apt:
+       pkg: iptraf-ng
+       state: present
+       update_cache: true
+     tags: hotspot
+
+   - name: Install gparted (used for expanding the partition to whatever size you have on your target sd card)
+     apt:
+       name: gparted
+       state: present
+       update_cache: true
+     tags: base
+  
+   - name: Install Vim (because vim > vi)
+     apt:
+       name: vim
+       state: present
+       update_cache: true
+     tags: base
+
+   - name: Install pv (Useful for monitoring progress if data through a pipe. Superuser tool- not leveraged in this recipe)
+     apt:
+       name: pv
+       state: present
+       update_cache: true
+     tags: base
+
+   - name: Install dig (Useful for testing DNS connectivity)
+     apt:
+       name: dnsutils
+       state: present
+       update_cache: true
+     tags: base
+        
+#   - name: Install go (prerequisite for some tools?)
+#     apt:
+#       name: golang
+#       state: present
+#       update_cache: true
+#     tags: base
+
+   - name: Install curl (Superuser tool- not leveraged in this recipe)
+     apt:
+       name: curl
+       state: present
+       update_cache: true
+     tags: base
+
+   - name: Install apache2 (apt-cacher-ng requirement.)
+     apt:
+       name: apache2
+       state: present
+       update_cache: true
+     tags: BuilderHotspot
+
+   - name: Install Apt-Cacher-ng (Proxy server for apt-get updates.  Saves you on downloads)
+     apt:
+       name: apt-cacher-ng
+       state: present
+       update_cache: true
+     tags: BuilderHotspot
+
+   - name: Synchronization of files for setting up apt-cacher-ng (Apt-cacher needs to be configured to listen on all interfaces on port 3142, as well enable the acng-report.html report.
+     tags: BuilderHotspot
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/apt-cacher-ng/"
+       dest: /etc/apt-cacher-ng/
+
+   - name: Synchronization of files for apt (configure target device to use builder hotspot's caching proxy) 
+     tags: BuilderHotspot
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/apt/"
+       dest: /tmp/apt/
+
+   - name: Install git (Fast, scalable revision control system used in software development)
+     apt:
+       name: git
+       state: present
+       update_cache: true
+     tags: base
+
+   - name: Install tmux (Enables multiple simultaneous terminals, useful in debugging remotely)
+     apt:
+       name: tmux
+       state: present
+       update_cache: true
+     tags: base
+
+   - name: Install tcpdump (useful in debugging networking issues)
+     apt:
+       name: tcpdump
+       state: present
+       update_cache: true
+     tags: debugging
+
+   - name: Install whois (useful in debugging dns issues)
+     apt:
+       name: whois
+       state: present
+       update_cache: true
+     tags: debugging
+
+   - name: Install ncdu (ncurses disk usage- provides a fast way to see what dirs are eating disk space)
+     apt:
+       name: ncdu
+       state: present
+       update_cache: true
+     tags: base
+     
+   - name: Install lshw (lshw us a snakk tiik ti extract detailed information on the hardware config of the machine.  Useful for debugging wifi cards)
+     apt:
+       name: lshw
+       state: present
+       update_cache: true
+     tags: debugging
+     
+   - name: Install dnsmasq (dnsmasq serves as our DHCP server as well as our DNS server for the wifi network.)
+     apt:
+       name: dnsmasq
+       state: present
+       update_cache: true
+     tags: hotspot
+   
+   - name: enable dnsmasq 
+     command: systemctl enable dnsmasq
+     tags: hotspot
+ 
+   - name: Install hostapd (hostapd turns your wifi card into a wireless hotspot)
+     apt:
+       name: hostapd
+       state: present
+       update_cache: true
+     tags: hotspot
+
+   - name: Install pip3.8 asciinema (Useful for documenting commands)
+     pip:
+       name: asciinema
+       executable: pip3.8
+     tags: documentation
+       
+   - name: Activate IP Forwarding (IP forwarding is necessary for a NAT'd wifi hotspot.)
+     command: sysctl net.ipv4.ip_forward
+     tags: hotspot
+
+   - name: Create /usr/local/etc directory (Used to track the current build version of the hotspot)
+     file: path=/usr/local/etc state=directory mode=0755 owner=root group=root
+     tags: hotspot
+
+   - name: Copy /usr/local/etc/ files over to target (Currently this is the hotspot version file)
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/usr/local/etc"
+       dest: /usr/local/
+     tags: hotspot
+
+   - name: Increment /usr/local/etc/Builder_Hotspot.ver contents to reflect build version
+     lineinfile:
+       path: /usr/local/etc/Builder_Hotspot.ver
+       regexp: '^Ver:.*'
+       line: "Ver: {{ version['hotspot_ver'] }}"
+     tags: hotspot
+
+   - name: Increment /usr/local/etc/Builder_Hotspot.ver contents to reflect build date
+     lineinfile:
+       path: /usr/local/etc/Builder_Hotspot.ver
+       regexp: '^BuildDate:.*'
+       line: "BuildDate: {{ version['build_date'] }}"
+     tags: hotspot
+
+#   - name: check go version
+#     command: go version
+#     register: result
+#     changed_when: no
+#     ignore_errors: true
+#     tags: base
+       
+   - name: Install exfat-utils (Useful in circumstances where users need to use an exfat usb drive)
+     apt:
+       name: exfat-utils
+       state: present
+       update_cache: true
+     tags: base
+
+   - name: Install exfat-fuse (Useful in circumstances where users need to use an exfat usb drive)
+     apt:
+       name: exfat-fuse
+       state: present
+       update_cache: true
+     tags: base
+
+   - name: Install nmap (Network Exploration & Portscanner.  Useful in discovering network properties of connected devices.)
+     apt:
+       name: nmap
+       state: present
+       update_cache: true
+     tags: debugging
+     
+   - name: Copy /etc/dnsmasq.conf configuration that is used for DHCP assignment for double wifi device.  Supports DHCP range of 10.6.6.10-15 on wifi interface & cisco's Open DNS as a root.  dhcp assignment & dns query logs are stored in /tmp/dnsmasq.log
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/dnsmasq.conf"
+       dest: /etc/dnsmasq.conf
+       owner: root
+       group: root
+       mode: 0744
+     when: ansible_wlan1.status is defined #IF TRUE, HOSTAPD is hosted on wlan0)
+     tags: hotspot
+ 
+   - name: Copy /etc/dnsmasq.conf configuration that is used for DHCP assignment for single wifi device.  Supports DHCP range of 10.6.6.10-15 on wifi interface & cisco's Open DNS as a root.  dhcp assignment & dns query logs are stored in /tmp/dnsmasq.log #Likely needs updates if I change interfaces 
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/dnsmasq.conf"
+       dest: /etc/dnsmasq.conf
+       owner: root
+       group: root
+       mode: 0744
+     when: ansible_wlan1.status is undefined #IF TRUE, HOSTAPD is hosted on wlan0)
+     tags: hotspot
+
+   - name: make ipv4 forwarding permanant by setting sysctlf file's net.ipv4.ip_forward = 1
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/sysctl.conf"
+       dest: /etc/sysctl.conf
+       owner: root
+       group: root
+       mode: 0744
+     tags: hotspot
+       
+   - name: Apply ip forwarding after reboot
+     command: sysctl -p /etc/sysctl.conf
+     tags: hotspot
+     
+   - name: Create hostapd Configuration directory
+     file: path=/etc/hostapd/ state=directory mode=0755
+     tags: hotspot
+            
+   - name: Copy /etc/hostapd/privateFWDHostAPD.conf configuration for private nat forwarding with a double wifi device
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/hostapd/privateFWDHostAPD.conf_two_wifis"
+       dest: /etc/hostapd/privateFWDHostAPD.conf
+       owner: root
+       group: root
+       mode: 0744
+     when: ansible_wlan1.status is defined #IF TRUE, HOSTAPD is hosted on wlan1)
+     tags: hotspot
+
+   - name: Copy /etc/hostapd/privateFWDHostAPD.conf configuration for private nat forwarding with a single wifi pi.
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/hostapd/privateFWDHostAPD.conf"
+       dest: /etc/hostapd/privateFWDHostAPD.conf
+       owner: root
+       group: root
+       mode: 0744
+     when: ansible_wlan1.status is undefined #IF TRUE, HOSTAPD is hosted on wlan0)
+     tags: hotspot
+
+   - name: Copy /etc/default/hostapd file.  This configures the correct wifi network (private/public, password, etc) and configures a log file that writes about connection state to /tmp/hostapd.log #Likely needs updates if I change interfaces
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/default/hostapd"
+       dest: /etc/default/hostapd
+       owner: root
+       group: root
+       mode: 0755
+     tags: os_config_files
+       
+   - name: Copy /etc/init.d/hostapd file.  Used to run hostapd as a daemon
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/init.d/hostapd"
+       dest: /etc/init.d/hostapd
+       owner: root
+       group: root
+       mode: 0755
+     tags: hostapd
+
+   # Add a line to a file if it does not exist, without passing regexp
+   - name: add Python3 alias to .bashrc.  Used to ensure ansible invokes a compatible python version.
+     become_user: pi
+     lineinfile:
+       path: .bashrc
+       line: 'alias python=python3.8'
+     tags: base 
+
+   - name: add neofetch to .bashrc.  Used to provide pleasant looking system info at login to device.
+     become_user: pi
+     lineinfile:
+       path: .bashrc
+       line: 'neofetch'
+     tags: base 
+
+   - name: source bashrc.  This command ensures previous .bashrc update is interpreted by the system.
+     become_user: pi
+     shell: . /home/pi/.bashrc && ls
+     tags: ansible
+
+   - name: set the hotspot into private forwarding mode.  This script is a get-out-of-jail-free card for anyone who screws up their iptables rules.  Run it and everything should be correctly set.
+     become_user: root
+     command: /usr/local/bin/StartProtectedFwdHotspot.sh
+     tags: ansible
+
+   - name: chmoding /usr/local/bin/ClearLogs.sh
+     file:
+       path: /usr/local/bin/ClearLogs.sh
+       owner: root
+       group: root
+       mode: 0755
+     tags: ansible
+
+   - name: Clear the log files on the recipient device in case you want to use this as an image.
+     command: bash -c "/usr/local/bin/ClearLogs.sh"
+     tags: ansible
+
+   - name: unmask hostapd.  (Masked unitfiles in systemd are unlaunchable.  Unmasking hostapd ensures it can be launched by systemd  )
+     command: systemctl unmask hostapd.service
+     tags: hotspot
+
+#   - name: Copy private ssh key to target
+#     become_user: pi
+#     ansible.builtin.copy:
+#       src: "{{ root_playbook_dir }}/pi/.ssh/id_rsa"
+#       dest: /home/pi/.ssh/id_rsa
+#       owner: pi
+#       group: pi
+#       mode: 0400
+#     tags: Ansible
+
+#   - name: Copy ssh public key to target
+#     become_user: pi
+#     ansible.builtin.copy:
+#       src: "{{ root_playbook_dir }}/pi/.ssh/id_rsa.pub"
+#       dest: /home/pi/.ssh/id_rsa.pub
+#       owner: pi
+#       group: pi
+#       mode: 0444
+#     tags: Ansible
+
+   - name: Ensure group "pcap" exists
+     group:
+       name: pcap
+       state: present
+     tags: Debugging
+     
+   - name: adding existing user pi to groups pcap and www-data
+     user:
+       name: pi
+       groups: pcap, www-data
+       append: yes
+     tags: 
+     - Debugging 
+     - Ansible
+
+   - name: reset /etc/apt/sources.list for post-setup use.  This removes dependencies on the apt-cacher proxy from the builder hotspot so apt-get updates work after install
+     command: mv /tmp/apt/sources.list.post /etc/apt/sources.list
+
+   - name: reset /etc/apt/sources.list.d/raspi.list for post-setup use.  This removes dependencies on the apt-cacher proxy from the builder hotspot so apt-get updates work after install.
+     command: mv /tmp/apt/sources.list.d/raspi.list.post /etc/apt/sources.list.d/raspi.list
+
+   - name: Synchronization of playbook for Ansible hotspot creation
+     tags: ansible
+     become_user: pi
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/../BuilderHotspot/"
+       dest: /home/pi/Playbooks/BuilderHotspot/
+       owner: pi
+       group: pi
+       mode: 0744
+   
+   - name: enable apt-cacher-ng
+     command: systemctl enable apt-cacher-ng
+     tags: Ansible
+
+   - name: Set chromium settings 
+     become_user: pi
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/pi/config/chromium/"
+       dest: /home/pi/.config/chromium/
+       owner: pi
+       group: pi
+       mode: 0600
+     tags: web_ui
+
+   - name: Copy LXDE-pi file that autolaunches chrome [145/156]
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/pi/config/lxsession/LXDE-pi/autostart"
+       dest: /etc/xdg/lxsession/LXDE-pi/autostart
+       owner: pi
+       group: pi
+       mode: 0644
+     tags: new
+
+   - name: Install netatalk
+     apt:
+       name: netatalk
+       state: present
+       update_cache: true
+     tags: base
+
+   - name: Install neofetch
+     apt:
+       name: neofetch
+       state: present
+       update_cache: true
+     tags: base
+
+   - name: Install iptables
+     apt:
+       name: iptables
+       state: present
+       update_cache: true
+     tags: base
+
+   - name: Copy netatalk config to target (for AFP file sharing)
+     become_user: root
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/netatalk/afp.conf"
+       dest: /etc/netatalk/afp.conf
+       owner: root
+       group: root
+       mode: 0644
+     tags: Ansible
+
+   - name: Unconditionally reboot the machine with all defaults
+     reboot:
+
+#everything under here is post-reboot cleanup.  Don't move anything under here unless it absolutely needs to be for final setup
+
+   - name: 2nd deactivate wlan1 after reboot (if its on for double wifi device).  Stops double DHCP assignment, which can cause problems in ansible commands sent to the device.
+     command: ip link set wlan1 down
+     when: ansible_wlan1.status is defined #we do run forwarding between wlan0 and wlan1)
+     tags: base
+
+   - name: copy the /etc/rc.local file which enables saving of ip tables rules
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/rc.local"
+       dest: /etc/rc.local
+       owner: root
+       group: root
+       mode: 0744
+     tags: supervisor_stuff
+
+   - name: Copy /etc/hosts file #Likely needs updates if I change interfaces
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/hosts"
+       dest: /etc/hosts
+       owner: root
+       group: root
+       mode: 0755
+     tags: os_config_files
+
+   - name: Copy /etc/hostname file #Likely needs updates if I change interfaces
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/hostname"
+       dest: /etc/hostname
+       owner: root
+       group: root
+       mode: 0755
+     tags: os_config_files
+
+   - name: Copy /etc/wpa_supplicant/ custom scripts over to target for double wifi device
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/wpa_supplicant/"
+       dest: /etc/wpa_supplicant/
+     when: ansible_wlan1.status is defined #we do run forwarding between wlan1 and wlan0)
+     tags: hotspot
+
+   - name: Copy /etc/wpa_supplicant/ custom scripts over to target for a single wifi device.  Ensures wlan0 doesn't connect to home wifi. 
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/wpa_supplicant/wpa_supplicant-wlan1.conf"
+       dest: /etc/wpa_supplicant/wpa_supplicant.conf
+     when: ansible_wlan1.status is undefined #we do run forwarding between eth0 and wlan0)
+     tags: hotspot
+
+   - name: Copy /etc/interfaces file for double wifi device.  Ensures static ip assignment compatible with dnsmasq is on wlan1 interface.
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/interfaces.wlan"
+       dest: /etc/interfaces
+       owner: root
+       group: root
+       mode: 0644
+     when: ansible_wlan1.status is defined #we do run forwarding between wlan1 and wlan0)
+     tags: hotspot
+
+   - name: Copy /etc/interfaces file.  Ensures static ip assignment compatible with dnsmasq is on wlan0 interface.
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/interfaces.eth"
+       dest: /etc/interfaces
+       owner: root
+       group: root
+       mode: 0644
+     when: ansible_wlan1.status is undefined #we do run forwarding between eth0 and wlan0)
+     tags: hotspot
+     
+   - name: Copy the /etc/dhcpcd.conf file which makes sure wlan1 has a static ip compatible with dnsmasq 
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/dhcpcd_wlan1.conf"
+       dest: /etc/dhcpcd.conf
+       owner: root
+       group: netdev
+       mode: 0664
+     when: ansible_wlan1.status is defined #HOT CONDITIONAL LOGIC (Only make wlan1 static if wlan1 exists)
+     tags: base
+
+   - name: Copy the /etc/dhcpcd.conf file which makes sure wlan0 has a static ip compatible with dnsmasq
+     ansible.builtin.copy:
+       src: "{{ root_playbook_dir }}/etc/dhcpcd_eth.conf"
+       dest: /etc/dhcpcd.conf
+       owner: root
+       group: netdev
+       mode: 0664
+     when: ansible_wlan1.status is undefined #HOT CONDITIONAL LOGIC (Only make wlan1 static if wlan1 exists)
+     tags: base
+
+   - name: Remove file (delete file)
+     ansible.builtin.file:
+       path: "{{ item }}"
+       state: absent
+     with_items:
+       - /home/pi/.config/chromium/SingletonCookie
+       - /home/pi/.config/chromium/SingletonLock
+       - /home/pi/.config/chromium/SingletonSocket
+
+   - name: Set Pi' user's passowrd
+     ansible.builtin.user:
+       name: pi
+       password: "$6$m4rkpugn3r$hJyiafK0O.2XJin/u.xFUaqPekhKZFkXT02PRPix/BGx7pxbNKpBfZBHL.I5jCCatMWOxr7JHwNKVxpEbl4jM0"
+
+   - name: wget the Filesystem resizer (Installed so we can resize the filesystem after reboot.  This is only useful if you DD the image before rebooting.)
+     get_url:
+       url: https://raw.githubusercontent.com/RPi-Distro/pi-gen/master/stage2/01-sys-tweaks/files/resize2fs_once
+       dest: /etc/init.d/resize2fs_once
+       mode: '0660'
+
+   - name: chmod +x the filesystem resizer
+     file:
+       path: /etc/init.d/resize2fs_once
+       owner: root
+       group: root
+       mode: 0755
+     tags: base
+
+   - name: add quiet init=/usr/lib/raspi-config/init_resize.sh to /boot/cmdline.txt
+     lineinfile:
+       path: /boot/cmdline.txt
+       line: quiet init=/usr/lib/raspi-config/init_resize.sh
+       insertafter: EOF
+     tags: base
+
+   - name: sudo systemctl enable resize2fs_once
+     command: systemctl enable resize2fs_once
+     tags: base        
+       
+   - name: set & save the iptables wlan rules for routing between wlan0 and wlan1 
+     command: /usr/local/bin/ActivateBasicHotspotIpTables_wlan0.sh >> /var/log/iptablessetup.log
+     when: ansible_wlan1.status is defined #we do run forwarding between etho and wlan0)
+     tags: networking
+
+   - name: set & save the iptables eth rules for routing between eth0 and wlan0 
+     command: /usr/local/bin/ActivateBasicHotspotIpTables_eth0.sh >> /var/log/iptablessetup.log
+     when: ansible_wlan1.status is undefined #we do run forwarding between etho and wlan0)
+     tags: networking
+
+   - debug:
+       msg: "MANDATORY: you must manually shell into the destination device and edit the /etc/wpa_supplicant/wpa_supplicant.conf file to specifiy to your wifi's ssid & password and then reboot the device"
+     when: ansible_wlan1.status is defined #IF TRUE, HOSTAPD is hosted on wlan1)
+
+   - name: delete the the ssh key copied to the host to enable ansible development
+     command: sed -i.bak '/pi@rPi_Ansible_Hotspot/d' /home/pi/.ssh/authorized_keys
+     tags: base      
+
+   - name: Generate new ssh key to be used by the host to enable ansible development
+     become_user: pi
+     community.crypto.openssh_keypair:
+       path: /home/pi/.ssh/id_rsa
+       force: True
+     tags: base 
+
+   - debug:
+       msg: "PLEASE REMEMBER TO LOG INTO THE TARGET DEVICES & USE passwd TO CHANGE THE PI ACCOUNT'S PASSWORD FOR YOUR BUILDER DEVICE'S PI ACCOUNT."

@@ -1,0 +1,43 @@
+{
+   "checksum": "da4fc7b5a3c412ae0f895c6e44af8fa0",
+   "roots": {
+      "bookmark_bar": {
+         "children": [ {
+            "date_added": "13196294779886506",
+            "guid": "3737bc3b-f208-45bf-b722-8cc7593239f4",
+            "id": "2",
+            "meta_info": {
+               "last_visited_desktop": "13196294851751489"
+            },
+            "name": "Apt-cacher-ng stats",
+            "type": "url",
+            "url": "http://10.6.6.1:3142/acng-report.html"
+         } ],
+         "date_added": "13196294379424546",
+         "date_modified": "13196294779886506",
+         "guid": "00000000-0000-4000-A000-000000000002",
+         "id": "1",
+         "name": "Bookmarks bar",
+         "type": "folder"
+      },
+      "other": {
+         "children": [  ],
+         "date_added": "13196294379424577",
+         "date_modified": "0",
+         "guid": "00000000-0000-4000-A000-000000000003",
+         "id": "3",
+         "name": "Other bookmarks",
+         "type": "folder"
+      },
+      "synced": {
+         "children": [  ],
+         "date_added": "13196294379424582",
+         "date_modified": "0",
+         "guid": "00000000-0000-4000-A000-000000000004",
+         "id": "4",
+         "name": "Mobile bookmarks",
+         "type": "folder"
+      }
+   },
+   "version": 1
+}

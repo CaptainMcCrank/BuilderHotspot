@@ -1,0 +1,21 @@
+# Configuration file for dnsmasq.
+#
+# Format is one option per line, legal options are the same
+# as the long options legal on the command line. See
+# "/usr/sbin/dnsmasq --help" or "man 8 dnsmasq" for details.
+
+# For debugging purposes, log each DNS query as it passes through
+# dnsmasq.
+log-queries
+log-facility=/tmp/dnsmasq.log
+
+domain-needed
+
+
+
+interface=wlan1
+dhcp-range=10.6.6.10,10.6.6.15,12h
+server=8.8.8.8
+server=8.8.4.4
+server=9.9.9.9
+local=/local/

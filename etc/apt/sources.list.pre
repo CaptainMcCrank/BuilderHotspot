@@ -1,0 +1,8 @@
+#deb http://raspbian.raspberrypi.org/raspbian/ buster main contrib non-free rpi
+##deb http://10.6.6.1:3142/raspbian.raspberrypi.org/raspbian/ buster main
+deb http://10.6.6.1:3142/raspbian.raspberrypi.org/raspbian/ bullseye main
+
+# Uncomment line below then 'apt-get update' to enable 'apt-get source'
+#deb-src http://raspbian.raspberrypi.org/raspbian/ buster main contrib non-free rpi
+##deb-src http://10.6.6.1:3142/raspbian.raspberrypi.org/raspbian/ buster main
+deb-src http://10.6.6.1:3142/raspbian.raspberrypi.org/raspbian/ bullseye main

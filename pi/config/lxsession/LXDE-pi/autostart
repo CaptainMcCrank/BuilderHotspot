@@ -1,0 +1,8 @@
+@lxpanel --profile LXDE-pi
+@pcmanfm --desktop --profile LXDE-pi
+@xscreensaver -no-splash
+@point-rpi
+@xset s noblank
+@xset s off
+@xset -dpms
+@chromium-browser http://10.6.6.1:3142/acng-report.html

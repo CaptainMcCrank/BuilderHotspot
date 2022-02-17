@@ -1,0 +1,4 @@
+deb http://127.0.0.1:3142/deb.nodesource.com/node_11.x buster main
+#deb https://deb.nodesource.com/node_11.x buster main
+deb-src http://127.0.0.1:3142/deb.nodesource.com/node_11.x buster main
+#deb-src https://deb.nodesource.com/node_11.x buster main
