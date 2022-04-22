@@ -24,9 +24,9 @@ This recipe has the following primary features
 
 
 # Prerequisites:
-- Raspberry Pi 3 B+ (x2) One runs a built version of the builder image downloadable at #URL#.  The second one will be used for receiving a build.)
+- Raspberry Pi 3 B+ (x2) One runs a built version of the builder image downloadable at #URL#.  (The second one will be used for receiving a build from the wifi hotspot.)
 - An internet connection (Wifi or ethernet work)
-- **Optional:** If you want to use an existing wireless network for backhaul connectivity instead of the ethernet port on your Pi).  The Panda wireless PAU05 is easy to source and is the device I test with.  https://www.amazon.com/Panda-300Mbps-Wireless-USB-Adapter/dp/B00EQT0YK2
+- **Optional:** If you want to use an existing wireless network for backhaul connectivity (instead of the ethernet port on your Pi).  The Panda wireless PAU05 is easy to source and is the device I test with.  https://www.amazon.com/Panda-300Mbps-Wireless-USB-Adapter/dp/B00EQT0YK2
 - Raspberry Pi Imager software: https://www.raspberrypi.com/software/
 - (x2+) 8gb SD cards (one that recieves the Builder image, and a second that will get a vanilla raspbian build.
 
