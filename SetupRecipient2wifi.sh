@@ -17,8 +17,7 @@ echo "${#attachedHOSTS[@]} hosts detected."
 echo "============================================================================================================================="
 echo "" 
 
-if [ ${#attachedHOSTS[@]} > 1 ]
-then
+if [ ${#attachedHOSTS[@]} -gt 1 ]; then
 	for h in ${attachedHOSTS[@]}; do
 		echo ""
 		echo "============================================================================================================================="
@@ -45,14 +44,16 @@ then
 		COMBINED=$EXISTINGNAME$SHORTMAC
 		if [[ "$EXISTINGNAME" == "AnsibleDest" ]];
 		then
-    			echo "Changing $EXISTINGNAME hostname"
-    			ssh pi@$h "sudo sed -i 's/AnsibleDest/$COMBINED/g' /etc/hostname; sudo sed -i 's/AnsibleDest/$COMBINED/g' /etc/hosts"
+			echo "Changing $EXISTINGNAME hostname to $COMBINED"
+    		ssh pi@$h "sudo sed -i 's/AnsibleDest/$COMBINED/g' /etc/hostname; sudo sed -i 's/AnsibleDest/$COMBINED/g' /etc/hosts"
 		else
-    			echo "Hostname is currently $EXISTINGNAME"
+    		echo "Hostname is currently $EXISTINGNAME"
 			echo "Unexpected hostname detected.  No change made."
 		fi
 		echo "Rebooting Ansibledest.  Takes about 40 seconds"
 		ssh pi@$h "sudo reboot now;"
+		HOSTNAMETODELETE=$(echo "$COMBINED" | tr '[:upper:]' '[:lower:]')
+		ssh-keygen -f "/home/pi/.ssh/known_hosts" -R $HOSTNAMETODELETE
 	done
 else
 	echo ""
@@ -71,6 +72,9 @@ else
 	date
 	echo "Rebooting Ansibledest.  Takes about 40 seconds"
 	ssh pi@ansibledest "sudo reboot now;"
+	ssh-keygen -R $COMBINED
+	ssh-keygen -R 10.6.6.10
+	ssh-keygen -R ansibledest
 	echo "Sending 4 pings, once every 10 seconds"
 	ping -D -i 10 -c 4 ansibledest
 fi

@@ -1,0 +1,12 @@
+[Unit]
+Description=Timer for launching device registration
+RefuseManualStart=no
+RefuseManualStop=no
+
+[Timer]
+OnCalendar=*-*-* *:05,15,25,35,45,55,59:00
+Persistent=true
+Unit=register-device.service
+
+[Install]
+WantedBy=timers.target

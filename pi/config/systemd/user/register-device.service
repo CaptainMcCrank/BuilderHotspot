@@ -1,0 +1,9 @@
+[Unit]
+Description=A job to register a device
+
+[Service]
+Type=simple
+ExecStart=/bin/register.sh
+
+[Install]
+WantedBy=multi-user.target

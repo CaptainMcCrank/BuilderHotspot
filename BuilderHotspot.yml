@@ -50,8 +50,11 @@
     int_count: "{{ ansible_interfaces | count }}"
     # ***BE SURE TO INCREMENT THE FOLLOWING VARIABLES IF YOU ARE UPGRADING THE HOTSPOT RECIPE
     version:
-      build_date: 12_20_21
-      hotspot_ver: 1.0
+      Build: BuilderHotspot
+      BuildDate: "03_03_22"
+      Ver: 1.0
+      Author: p@mccannabanana.com
+
   tasks:
 
    - name: get content of /etc/os-release so we can confirm we're looking at a bullseye-based target.
@@ -373,25 +376,74 @@
      file: path=/usr/local/etc state=directory mode=0755 owner=root group=root
      tags: hotspot
 
-   - name: Copy /usr/local/etc/ files over to target (Currently this is the hotspot version file)
+   - name: Copy /usr/local/etc/ files over to target *currently this is the hotspot version file*
      ansible.builtin.copy:
-       src: "{{ root_playbook_dir }}/usr/local/etc"
-       dest: /usr/local/
-     tags: hotspot
+       src: "{{ root_playbook_dir }}/usr/local/etc/device.ver"
+       dest: /boot/device.ver
+     tags: 
+     - os_config_files
+     - DeviceRegistration
 
-   - name: Increment /usr/local/etc/Builder_Hotspot.ver contents to reflect build version
+   - name: Increment /boot/device.ver contents to reflect build version
      lineinfile:
-       path: /usr/local/etc/Builder_Hotspot.ver
+       path: /boot/device.ver
        regexp: '^Ver:.*'
-       line: "Ver: {{ version['hotspot_ver'] }}"
-     tags: hotspot
+       line: "Ver: {{ version['Ver'] }}"
+     tags: 
+     - os_config_files
+     - DeviceRegistration
 
-   - name: Increment /usr/local/etc/Builder_Hotspot.ver contents to reflect build date
+   - name: Increment /boot/device.ver contents to reflect build Author
      lineinfile:
-       path: /usr/local/etc/Builder_Hotspot.ver
+       path: /boot/device.ver
+       regexp: '^Author:.*'
+       line: "Author: {{ version['Author'] }}"
+     tags: 
+     - os_config_files
+     - DeviceRegistration
+
+   - name: Increment /boot/device.ver contents to reflect build date
+     lineinfile:
+       path: /boot/device.ver
        regexp: '^BuildDate:.*'
-       line: "BuildDate: {{ version['build_date'] }}"
-     tags: hotspot
+       line: "BuildDate: {{ version['BuildDate'] }}"
+     tags: 
+     - os_config_files
+     - DeviceRegistration
+     
+   - name: Increment /boot/device.ver contents to reflect build Name
+     lineinfile:
+       path: /boot/device.ver
+       regexp: '^Build:.*'
+       line: "Build: {{ version['Build'] }}"
+     tags: 
+     - os_config_files
+     - DeviceRegistration
+
+   - name: Copy systemd timers & services files for greg, ices and device registration
+     synchronize:
+       src: "{{ root_playbook_dir }}/pi/config/systemd"
+       dest: /home/pi/.config/.
+     tags: 
+     - streamer
+     - greg
+     - DeviceRegistration
+
+   - name: Copy device registration scripts 
+     synchronize:
+       src: "{{ root_playbook_dir }}/bin/register.sh"
+       dest: /bin/.
+     tags: DeviceRegistration
+
+   - name: enable device registration timer so it launches after reboot
+     become_user: pi
+     command: systemctl --user enable register-device.service # no now switch because I don't want to run it
+     tags: DeviceRegistration
+
+   - name: enable device registration timer so it launches after reboot
+     become_user: pi
+     command: systemctl --user enable register-device.timer
+     tags: DeviceRegistration
 
 #   - name: check go version
 #     command: go version
@@ -796,6 +848,10 @@
        path: /home/pi/.ssh/id_rsa
        force: True
      tags: base 
+
+   - name: install community.general so we have access to modules like shutdown https://docs.ansible.com/ansible/latest/collections/community/general/shutdown_module.html
+     command: ansible-galaxy collection install community.general
+     tags: base     
 
    - debug:
        msg: "PLEASE REMEMBER TO LOG INTO THE TARGET DEVICES & USE passwd TO CHANGE THE PI ACCOUNT'S PASSWORD FOR YOUR BUILDER DEVICE'S PI ACCOUNT."
