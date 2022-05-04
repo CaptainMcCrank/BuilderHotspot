@@ -659,8 +659,6 @@
        mode: 0644
      tags: Ansible
 
-   - name: Unconditionally reboot the machine with all defaults
-     reboot:
 
 #everything under here is post-reboot cleanup.  Don't move anything under here unless it absolutely needs to be for final setup
 
@@ -820,3 +818,9 @@
 
    - debug:
        msg: "PLEASE REMEMBER TO LOG INTO THE TARGET DEVICES & USE passwd TO CHANGE THE PI ACCOUNT'S PASSWORD FOR YOUR BUILDER DEVICE'S PI ACCOUNT."
+
+   - name: shutdown the system in 1 minute
+     command: shutdown -h +1
+     tags: 
+     - streamer
+     - AnsibleHousekeeping
