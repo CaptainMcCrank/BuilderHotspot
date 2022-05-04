@@ -60,3 +60,10 @@ This recipe has the following primary features
 - Prepare the recipient image for accepting ansible by running SetupRecipient.sh (./SetupRecipient.sh).  This script resets a few commonly used ssh keys for the local network, copies an ssh id to the recipient device and sets the Locale on the target to en_US.UTF-8 (as of October, 2021, the new Rasbian images still default to en_GB.UTF8, even if you set the locale to LosAngeles in the Raspbian imager. 
 - After the recipient image reboots, you're ready to go!  Install the Builder Recipient image with the following command: 
 `ansible-playbook -i /etc/ansible/hosts -u pi BuilderHotspot.yml`
+
+
+Here's an image of the playbook build process in action:
+
+![BuilderHotspotPlaybook](builderdemo.gif)
+
+Move along.
