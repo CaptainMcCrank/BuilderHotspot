@@ -6,7 +6,9 @@ If you are looking for a better way to automate the development of Raspberry pis
 --- 
 
 
-The Raspberry Pi is an optimal platform for hobbyists who want to build prototypes and learn about computers.  Unfortunately, it's often difficult for people who want to reproduce projects that hav ebeen published on the Internet.  If you try to reproduced Internet-hosted Raspberry pi projects, you'll find you spend almost as much time troubleshooting stale documentation as troubleshooting your actual device.  I have fixed this problem by providing Raspberry Pi Developers an easier way to develop and share Raspberry pi IoT projects.  I present to you the Totally Rad Ansible Builder Wifi Hotspot.  You can use this platform in your Continuous development process to create a recipe that enables reproducible builds* of your raspberry pi project.
+The Raspberry Pi is an optimal platform for hobbyists who want to build prototypes and learn about computers.  Unfortunately, it's often difficult for people to reproduce projects published on the Internet.  If you try to replicate a Pi project you've seen online, you'll find you spend almost as much time troubleshooting stale documentation as troubleshooting your actual device.  
+
+I have fixed this problem by providing Raspberry Pi Developers an easier way to develop and share Raspberry pi IoT projects.  I present to you the Totally Rad Ansible Builder Wifi Hotspot.  You can use this platform in your Continuous development process to create a recipe that enables reproducible builds* of your raspberry pi project.
 
 ---
 
