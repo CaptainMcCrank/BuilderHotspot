@@ -3,4 +3,5 @@
 # Uncomment line below then 'apt-get update' to enable 'apt-get source'
 #deb-src http://archive.raspberrypi.org/debian/ buster main
 ##deb-src [trusted=yes] http://10.6.6.1:3142/archive.raspberrypi.org/debian/ buster main
-deb-src [trusted=yes] http://10.6.6.1:3142/archive.raspberrypi.org/debian/ bullseye main
+#deb-src [trusted=yes] http://10.6.6.1:3142/archive.raspberrypi.org/debian/ bullseye main
+deb-src [trusted=yes] http://10.6.6.1:3142/archive.raspberrypi.org/debian/ bookworm main
